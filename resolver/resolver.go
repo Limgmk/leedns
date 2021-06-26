@@ -42,7 +42,7 @@ type Resolver struct {
 	DownClients     []*Client
 	lruExpiresCache *LEC.LruExpiresCache
 	weightSum       int
-	clientsLock     sync.RWMutex
+	lock            sync.RWMutex
 	crontab         *cron.Cron
 }
 
@@ -102,7 +102,7 @@ func NewResolver(config *Config) (r *Resolver, err error) {
 		}
 		r.StrategyFun = loadBalancedQuery
 	default:
-		return nil, errors.New(fmt.Sprintf("Invalid strategy: %s", config.Strategy))
+		return nil, fmt.Errorf("Invalid strategy: %s", config.Strategy)
 	}
 
 	r.crontab = cron.New()
