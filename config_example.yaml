@@ -48,7 +48,7 @@ bootstrap:
 # 是否缓存 dns 记录，默认为 true
 cache: true
 
-# 向上游查询的方式, 支持并发(concurrent, 默认)、随机(random)以及负载均衡(load-balanced)
+# 向上游查询的方式, 支持并发(concurrent, 默认)、随机(random)、fallback以及负载均衡(load-balanced)
 strategy: concurrent
 
 # hosts 文件位置
