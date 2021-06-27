@@ -2,3 +2,4 @@ certfile/
 target/
 config.yaml
 main
+.vscode/
