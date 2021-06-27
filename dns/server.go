@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/libp2p/go-reuseport"
-	"github.com/m13253/dns-over-https/json-dns"
+	jsonDNS "github.com/m13253/dns-over-https/json-dns"
 	D "github.com/miekg/dns"
 )
 

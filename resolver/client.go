@@ -102,20 +102,31 @@ func concurrentQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
 		}()
 	}
 
-	var ret result
+	var badResult *D.Msg
 	for i := 0; i < len(clients); i++ {
-		if ret = <-ch; ret.Error == nil && ret.Msg != nil && ret.Msg.Answer != nil {
+		ret := <-ch
+		msg = ret.Msg
+		err = ret.Error
+		if err != nil || msg == nil {
+			continue
+		}
+		if msg.Answer != nil {
 			break
 		} else {
-			continue
+			badResult = msg
 		}
 	}
 
-	return ret.Msg, ret.Error
+	if msg == nil {
+		msg = badResult
+	}
+
+	return msg, err
 }
 
 func randomQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
 
+	var badResult *D.Msg
 	clients := r.copyClients()
 	for i := len(clients) - 1; i >= 0; i-- {
 		randIndex := rand.Intn(len(clients))
@@ -127,14 +138,20 @@ func randomQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
 		}
 
 		msg, _, err = c.c.Exchange(m)
-		if err == nil && msg != nil && msg.Answer != nil {
+		if err != nil || msg == nil {
+			r.failedClient(c)
+			clients = append(clients[:randIndex], clients[randIndex+1:]...)
+			continue
+		}
+		if msg.Answer != nil {
 			break
 		} else {
-			if err != nil {
-				r.failedClient(c)
-			}
-			clients = append(clients[:randIndex], clients[randIndex+1:]...)
+			badResult = msg
 		}
+	}
+
+	if msg == nil {
+		msg = badResult
 	}
 
 	return msg, err
@@ -142,6 +159,7 @@ func randomQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
 
 func loadBalancedQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
 
+	var badResult *D.Msg
 	var lastClient *Client
 	len := len(r.Clients)
 	for i := len - 1; i >= 0; {
@@ -157,32 +175,45 @@ func loadBalancedQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
 		}
 
 		msg, _, err = c.c.Exchange(m)
-		if err != nil {
+		if err != nil || msg == nil {
 			r.failedClient(c)
 			continue
 		}
-		if msg != nil && msg.Answer != nil {
+		if msg.Answer != nil {
 			break
+		} else {
+			badResult = msg
 		}
+	}
+
+	if msg == nil {
+		msg = badResult
 	}
 
 	return msg, err
 }
 
 func fallbackQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
+	var badResult *D.Msg
 	for _, c := range r.Clients {
 		if c.failedTimes == maxFailedTimes {
 			continue
 		}
 
 		msg, _, err = c.c.Exchange(m)
-		if err != nil {
+		if err != nil || msg == nil {
 			r.failedClient(c)
 			continue
 		}
-		if msg != nil && msg.Answer != nil {
+		if msg.Answer != nil {
 			break
+		} else {
+			badResult = msg
 		}
+	}
+
+	if msg == nil {
+		msg = badResult
 	}
 
 	return msg, err
