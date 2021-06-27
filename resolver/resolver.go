@@ -83,6 +83,8 @@ func NewResolver(config *Config) (r *Resolver, err error) {
 		r.StrategyFun = concurrentQuery
 	case "random":
 		r.StrategyFun = randomQuery
+	case "fallback":
+		r.StrategyFun = fallbackQuery
 	case "load-balanced":
 		var weights []int
 		for i := len(r.Clients) - 1; i >= 0; i-- {

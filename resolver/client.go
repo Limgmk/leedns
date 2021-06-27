@@ -9,19 +9,6 @@ import (
 
 const maxFailedTimes = 5
 
-// func (c *Client) getFailedTimes() int {
-// 	c.lock.RLock()
-// 	times := c.failedTimes
-// 	c.lock.RUnlock()
-// 	return times
-// }
-
-// func (c *Client) addFailedTimes() {
-// 	c.lock.Lock()
-// 	c.failedTimes++
-// 	c.lock.Unlock()
-// }
-
 func (r *Resolver) copyClients() []*Client {
 	r.lock.RLock()
 	clients := make([]*Client, len(r.Clients))
@@ -29,64 +16,6 @@ func (r *Resolver) copyClients() []*Client {
 	r.lock.RUnlock()
 	return clients
 }
-
-// func (r *Resolver) removeClient(c *Client) {
-// 	r.clientsLock.Lock()
-// 	for i := len(r.Clients) - 1; i >= 0; i-- {
-// 		item := r.Clients[i]
-// 		if item == c {
-// 			r.weightSum = r.weightSum - c.Weight
-// 			r.Clients = append(r.Clients[:i], r.Clients[i+1:]...)
-// 			r.DownClients = append(r.DownClients, c)
-// 			break
-// 		}
-// 	}
-// 	r.clientsLock.Unlock()
-// }
-
-// func (r *Resolver) resetClients() {
-// 	r.clientsLock.Lock()
-// 	r.weightSum = 0
-// 	for _, c := range r.Clients {
-// 		c.currentWeight = 0
-// 		c.failedTimes = 0
-// 		r.weightSum += c.Weight
-// 	}
-// 	for _, c := range r.DownClients {
-// 		c.currentWeight = 0
-// 		c.failedTimes = 0
-// 		r.weightSum += c.Weight
-// 	}
-// 	r.Clients = append(r.Clients, r.DownClients...)
-// 	r.DownClients = []*Client{}
-// 	r.clientsLock.Unlock()
-// }
-
-// func (r *Resolver) resetClients() {
-// 	r.lock.Lock()
-// 	r.weightSum = 0
-// 	for _, c := range r.Clients {
-// 		c.currentWeight = 0
-// 		c.failedTimes = 0
-// 		r.weightSum += c.Weight
-// 	}
-// 	r.DownClients = []*Client{}
-// 	r.lock.Unlock()
-// }
-
-// func (r *Resolver) getClientsLen() int {
-// 	r.clientsLock.RLock()
-// 	l := len(r.Clients)
-// 	r.clientsLock.RUnlock()
-// 	return l
-// }
-
-// func (r *Resolver) getDownClientsLen() int {
-// 	r.lock.RLock()
-// 	l := len(r.DownClients)
-// 	r.lock.RUnlock()
-// 	return l
-// }
 
 func (r *Resolver) failedClient(c *Client) {
 	c.lock.Lock()
@@ -168,19 +97,17 @@ func concurrentQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
 			msg, _, err := c.c.ExchangeContext(ctx, m)
 			ch <- result{msg, err}
 			if err != nil {
-				c.lock.Lock()
-				c.failedTimes++
-				c.lock.Unlock()
+				r.failedClient(c)
 			}
 		}()
 	}
 
 	var ret result
 	for i := 0; i < len(clients); i++ {
-		if ret = <-ch; ret.Msg == nil || ret.Msg.Answer == nil {
-			continue
-		} else {
+		if ret = <-ch; ret.Error == nil && ret.Msg != nil && ret.Msg.Answer != nil {
 			break
+		} else {
+			continue
 		}
 	}
 
@@ -200,10 +127,12 @@ func randomQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
 		}
 
 		msg, _, err = c.c.Exchange(m)
-		if err == nil {
+		if err == nil && msg != nil && msg.Answer != nil {
 			break
 		} else {
-			r.failedClient(c)
+			if err != nil {
+				r.failedClient(c)
+			}
 			clients = append(clients[:randIndex], clients[randIndex+1:]...)
 		}
 	}
@@ -214,8 +143,8 @@ func randomQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
 func loadBalancedQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
 
 	var lastClient *Client
-	clients := r.copyClients()
-	for i := len(clients) - 1; i >= 0; {
+	len := len(r.Clients)
+	for i := len - 1; i >= 0; {
 		c, _ := r.getClientByLoad()
 
 		if c.failedTimes == maxFailedTimes {
@@ -228,16 +157,33 @@ func loadBalancedQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
 		}
 
 		msg, _, err = c.c.Exchange(m)
-		if err == nil {
-			break
-		} else {
+		if err != nil {
 			r.failedClient(c)
+			continue
+		}
+		if msg != nil && msg.Answer != nil {
+			break
 		}
 	}
 
 	return msg, err
 }
 
-// func fallbackQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
+func fallbackQuery(m *D.Msg, r *Resolver) (msg *D.Msg, err error) {
+	for _, c := range r.Clients {
+		if c.failedTimes == maxFailedTimes {
+			continue
+		}
 
-// }
+		msg, _, err = c.c.Exchange(m)
+		if err != nil {
+			r.failedClient(c)
+			continue
+		}
+		if msg != nil && msg.Answer != nil {
+			break
+		}
+	}
+
+	return msg, err
+}

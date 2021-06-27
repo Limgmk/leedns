@@ -36,15 +36,14 @@ func LoadHosts(hostsFile string) (hosts Hosts, err error) {
 	list := splitByLines(hostsString)
 
 	for _, item := range list {
-		if match, _ := regexp.MatchString(`^\s*#`, item); match {
+		if match := regexp.MustCompile(`^\s*#`).FindString(item); match != "" {
 			continue
 		}
 
-		reg := regexp.MustCompile("\\s+")
-		item = reg.ReplaceAllString(item, " ")
+		item = regexp.MustCompile(`\s+`).ReplaceAllString(item, " ")
 
 		ss := strings.Split(item, " ")
-		if len(ss) == 0 {
+		if len(ss) <= 1 {
 			continue
 		}
 		for _, domain := range ss[1:] {
